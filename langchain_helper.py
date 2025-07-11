@@ -1,206 +1,31 @@
-# forma antigua - deprecated
-#from langchain.llms import OpenAI
-
-# BUENA PRÁCTICA
-# import os
-# import sys # <-- Importamos el módulo del sistema
-# from dotenv import load_dotenv
-# from langchain_google_genai import ChatGoogleGenerativeAI
-# import re # Importamos el módulo de expresiones regulares para parsear la respuesta
-
-# 1. Carga las variables desde el archivo .env
-# Esto lee el archivo .env y pone GOOGLE_API_KEY a disposición del programa.
-# load_dotenv()
-
-# 2. (Opcional pero recomendado) Verifica que la clave existe
-# if not os.getenv("GOOGLE_API_KEY"):
-#     raise ValueError("No se encontró la GOOGLE_API_KEY. Revisa tu archivo .env.")
-
-# 3. Instancia el modelo de forma limpia
-# No es necesario pasar la clave aquí. LangChain la encontrará por sí solo.
-# print("Credenciales encontradas. Cargando el modelo gemini-2.5-flash...")
-# try:
-#     llm = ChatGoogleGenerativeAI(
-#         model="gemini-2.5-flash",
-#         temperature=0.8,  # Un valor entre 0.7 y 0.9 es ideal para creatividad
-#         top_p=0.9,
-#         top_k=40 # A menudo se usa junto a top_p
-#     )
-# except Exception as e:
-#     print(f"Error al cargar el modelo: {e}")
-#     print("El programa no puede continuar. Revisa tu API Key y el nombre del modelo.")
-    # Al usar exit(), nos aseguramos de que si ocurre un error crítico al inicio, el programa se detiene de inmediato con un mensaje claro, evitando errores en cadena más adelante
-    # sys.exit(1) # <-- Usamos sys.exit(). El '1' indica que hubo un error.
-
-# 4. ¡A usarlo!
-# print("¡Modelo listo! Ahora puedes interactuar con Gemini.")
-# prompt = "Escribe un poema corto sobre la velocidad de la luz y la información."
-
-# def generate_pet_name():
-#     name = "Tengo una gatita y quiero un nombre copado para llamarla. Sugiereme 5 nombres muy buenos para mi mascota"
-#     return name
-
-# función mejorada con tipos fijos
-# def generate_pet_name(animal_type: str, gender: str, style: str) -> str:
-#     """
-#     Genera una lista de nombres de mascotas usando Gemini.
-
-#     Args:
-#         animal_type (str): El tipo de animal (e.g., "gato", "perro", "hurón").
-#         gender (str): El género del animal (e.g., "hembra", "macho").
-#         style (str): El estilo de nombres deseado (e.g., "copados y modernos", "mitológicos", "de personajes de ciencia ficción").
-    
-#     Returns:
-#         str: La respuesta del modelo con la lista de nombres.
-#     """
-#     print(f"\nBuscando 5 nombres de estilo '{style}' para un(a) {animal_type} {gender}...")
-
-#     # Creamos un prompt dinámico usando f-strings. ¡Mucho más flexible!
-#     prompt = f"""
-#     Eres un experto en encontrar los nombres más originales y geniales para mascotas.
-#     Quiero que me sugieras 5 nombres para mi {animal_type} {gender}.
-#     El estilo de los nombres que busco es: {style}.
-    
-#     Por favor, presenta los nombres en una lista numerada y no añadas ninguna explicación adicional, solo la lista.
-#     """
-    
-#     # Invocamos el modelo con nuestro prompt dinámico
-#     response = llm.invoke(prompt)
-    
-#     return response.content
-
-# función mejorada con prompt engineering avanzado
-# def generate_pet_name_pro(animal_description: str) -> str:
-#     """
-#     Genera nombres de mascotas usando un prompt estructurado y avanzado.
-#     """
-    
-#     # Este es el prompt "maestro", adaptado de tu ejemplo.
-#     prompt_template = f"""
-#     # Rol
-#     Eres un 'Bautizador de Mascotas' legendario, un poeta de los nombres con un don único para capturar la esencia de un animal en una sola palabra. Tu estilo es moderno, cool, y evita los clichés a toda costa.
-
-#     # Tarea
-#     A partir de la descripción de la mascota que te proporciono en el #Contexto, tu misión es generar una lista de 5 nombres que cumplan con todos los requerimientos.
-
-#     # Requerimientos
-#     1.  **Originalidad Máxima:** Evita a toda costa nombres comunes como "Luna", "Max", "Bella", "Simba", "Lola".
-#     2.  **Estilo "Cool":** Los nombres deben sonar interesantes, modernos y tener carácter. Pueden ser de mitología, ciencia ficción, literatura, o simplemente palabras que suenen bien.
-#     3.  **Breve Justificación:** Al lado de cada nombre, entre paréntesis, añade una brevísima explicación de una línea sobre por qué ese nombre es genial para esa mascota.
-#     4.  **Formato Estricto:** La salida debe ser una lista numerada del 1 al 5. No incluyas introducciones, saludos ni despedidas. Solo la lista.
-#     5.  **Idioma:** Utiliza un español universalmente entendible pero con un toque moderno, similar al que se usaría en Argentina para algo "con onda".
-
-#     # Contexto
-#     La mascota a nombrar es la siguiente:
-#     {animal_description}
-
-#     # Ejemplo de Salida Perfecta
-#     (Si el contexto fuera "gatita negra, muy sigilosa y elegante")
-
-#     1.  Umbra (Significa "sombra" en latín, perfecto para su color y sigilo).
-#     2.  Nyx (La diosa griega de la noche, poderoso y místico).
-#     3.  Vesper (Relacionado con el atardecer, suena sofisticado y misterioso).
-#     4.  Morwen (Un nombre de la literatura de Tolkien, suena fuerte y elegante).
-#     5.  Pixel (Un toque geek y moderno para una gata pequeña y precisa).
-#     """
-    
-#     print(f"\nGenerando nombres PRO para: {animal_description}")
-#     response = llm.invoke(prompt_template)
-#     return response.content
-
-
-# --- MÉTODO ANTIGUO (INVOKE) ---
-# print("--- Usando .invoke() (espera completa) ---")
-# response = llm.invoke(prompt)
-# print(response.content)
-# print("\n" + "="*40 + "\n")
-
-
-# --- MÉTODO NUEVO Y RÁPIDO (STREAM) ---
-# print("--- Usando .stream() (respuesta inmediata palabra por palabra) ---")
-# .stream() devuelve un generador que podemos recorrer con un bucle for
-# full_response = ""
-# for chunk in llm.stream(prompt):
-#     # chunk.content contiene el nuevo trozo de texto
-#     print(chunk.content, end="", flush=True) # flush=True fuerza la impresión inmediata
-#     full_response += chunk.content
-
-# if __name__ == "__main__":
-    # --- ¡Ahora usemos nuestra función! ---
-    # 1. Tu petición original
-    # nombres_gata_cool = generate_pet_name(animal_type="gatita", gender="hembra", style="copados y modernos")
-    # print("--- Nombres para Gatita Cool ---")
-    # print(nombres_gata_cool)
-
-    # # 2. Probemos con otra mascota para ver la flexibilidad
-    # nombres_perro_heroe = generate_pet_name(animal_type="perro", gender="macho", style="de héroes de videojuegos")
-    # print("--- Nombres para Perro Héroe ---")
-    # print(nombres_perro_heroe)
-
-    # # 3. Y otra más
-    # nombres_hamster_comida = generate_pet_name(animal_type="hámster", gender="hembra", style="inspirados en comida deliciosa")
-    # print("--- Nombres para Hámster Comida ---")
-    # print(nombres_hamster_comida)
-    
-    # --- Usemos la nueva función PRO ---
-    # descripcion = "Gatita hembra, de color blanco y negro, muy juguetona y un poco cariñosa."
-    # nombres_pro = generate_pet_name_pro(descripcion)
-    # print(nombres_pro)
-    
-    
-
-# usando clases y SOLID
-# class PetNameGenerator:
-#     def __init__(self, provider="google", temperature=0.8, top_p=0.9):
-#         # El constructor se encarga de la configuración inicial.
-#         self.temperature = temperature
-#         self.top_p = top_p
-#         if provider == "google":
-#             self.llm = ChatGoogleGenerativeAI(
-#                 model="gemini-1.5-flash",
-#                 temperature=self.temperature,
-#                 top_p=self.top_p
-#             )
-#         # Aquí podrías añadir un elif para 'openai', etc.
-        
-#         self.prompt_template = """
-# # Rol
-# ... (el prompt avanzado que definimos antes) ...
-# """
-
-#     def generate(self, animal_description: str) -> str:
-#         # El método se centra solo en su tarea: generar.
-#         final_prompt = self.prompt_template.format(animal_description=animal_description)
-#         response = self.llm.invoke(final_prompt)
-#         return response.content
-
-# # --- Uso de la clase ---
-# # Creas la instancia una vez
-# name_generator = PetNameGenerator() 
-
-# # Y la usas las veces que quieras
-# descripcion_perro = "Cachorro de Corgi, muy enérgico y siempre parece estar sonriendo."
-# nombres_perro = name_generator.generate(descripcion_perro)
-# print(nombres_perro)
-
-
-
-# usando clases y SOLID
+# --- Módulos estándar de Python ---
 import os
 import sys
-import re # Importamos el módulo de expresiones regulares para parsear la respuesta
+import re
+import tempfile
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser # Un parser simple
-# obsolotetos
-# from langchain.agents import load_tools
-# from langchain.agents import initialize_agent
-# from langchain.agents import AgentType
-# --- NUEVOS IMPORTS PARA EL AGENTE ---
-from langchain.agents import load_tools, create_react_agent, AgentExecutor
-# El "Hub" es donde LangChain almacena prompts de agentes probados y optimizados
+
+# --- Librerías de Terceros (opcional, podrías tenerlas en la UI) ---
+from youtube_transcript_api import YouTubeTranscriptApi
+
+# --- Componentes Principales de LangChain ---
+from langchain.prompts import PromptTemplate, ChatPromptTemplate
+from langchain.agents import create_react_agent, AgentExecutor, Tool
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.chains import LLMMathChain
 from langchain import hub
+
+# --- Componentes del Ecosistema de LangChain (Integraciones) ---
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_community.document_loaders import YoutubeLoader, PyPDFLoader
+from langchain_community.vectorstores import FAISS
+from langchain_community.tools import WikipediaQueryRun
+from langchain_community.utilities import WikipediaAPIWrapper
+
+# --- Componentes del "Core" de LangChain (Abstracciones Fundamentales) ---
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
+from langchain_core.documents import Document
 
 # --- Clase para los Colores ANSI ---
 # Definir esto en una clase hace que el código sea más legible
@@ -273,23 +98,13 @@ class PetNameGenerator:
         # El flujo de datos es: Diccionario de entrada -> Prompt -> LLM -> Parser de Salida
         self._chain = prompt_template | llm | output_parser
 
-    # def _parse_and_display(self, text_response: str):
-    #     """
-    #     Método privado para parsear la respuesta del LLM y mostrarla con colores.
-    #     Esto separa la presentación de la lógica de generación.
-    #     Parsea la respuesta del LLM y la devuelve como una estructura de datos.
-    #     """
     # ¡ESTE MÉTODO ES NUEVO! Devuelve una lista de diccionarios.
     def _parse_response(self, text_response: str) -> list[dict]:
         """
         Parsea la respuesta del LLM y la devuelve como una estructura de datos.
         Este método es más robusto y no depende de una regex compleja.
         """
-        # Expresión regular para capturar el número, el nombre y la justificación
-        # Busca el patrón: "1. Nombre (justificación)"
         parsed_names = []
-        # pattern = re.compile(r"^\s*(\d+)\.\s+(.+?)\s+\((.*)\)", re.MULTILINE)
-        # matches = pattern.findall(text_response)
         # Dividimos la respuesta completa en líneas individuales
         lines = text_response.strip().split('\n')
         
@@ -321,61 +136,6 @@ class PetNameGenerator:
              return [{"error": "No se pudo extraer ningún nombre del formato esperado.", "raw": text_response}]
 
         return parsed_names
-
-        # if not matches:
-             # Si el parseo falla, simplemente imprime la respuesta sin formato
-            # print(f"{Colors.WARNING}No se pudo parsear la respuesta, mostrando en bruto:{Colors.ENDC}")
-            # print(text_response)
-            # return
-            # Si falla, devolvemos un diccionario de error para mostrar en la UI
-            # return [{"error": "No se pudo parsear la respuesta del modelo.", "raw": text_response}]
-
-        # for match in matches:
-            # number, name, justification = match
-            # name = name.strip().replace('*', '') # Limpiamos el nombre por si acaso
-            # print(
-            #     f"{Colors.HEADER}{number}.{Colors.ENDC} "
-            #     f"{Colors.BOLD}{Colors.CYAN}{name}{Colors.ENDC} "
-            #     f"({Colors.GREEN}{justification}{Colors.ENDC})"
-            # )
-            # name, justification = match[1], match[2]
-            # parsed_names.append({
-            #     "name": name.strip().replace('*', ''),
-            #     "justification": justification.strip()
-            # })
-            # return parsed_names
-
-    # def generate_and_show(self, animal_description: str):
-    #     """
-    #     Método público que orquesta todo el proceso.
-    #     Este método ahora es mucho más simple. Solo invoca la cadena.
-    #     """
-    #     print(
-    #         f"\n{Colors.BLUE}Buscando nombres PRO para:{Colors.ENDC} "
-    #         f"{Colors.BOLD}{animal_description}{Colors.ENDC}"
-    #     )
-    #     # Usamos un bucle de stream para dar feedback inmediato de que está funcionando
-    #     print(f"{Colors.WARNING}Pensando...{Colors.ENDC}", end="", flush=True)
-        
-    #     # final_prompt = self.prompt_template.format(animal_description=animal_description)
-        
-    #     # --- Invocamos la cadena usando .stream() ---
-    #     # La cadena se encarga de todo el trabajo pesado por nosotros.
-    #     full_response = ""
-    #     # .stream() ahora funciona en toda la cadena. La entrada es un diccionario.
-    #     for chunk in self._chain.stream({"animal_description": animal_description}):
-    #         print(f"{Colors.WARNING}.{Colors.ENDC}", end="", flush=True)
-    #         full_response += chunk
-        
-    #     # response_content = ""
-    #     # for chunk in self.llm.stream(final_prompt):
-    #     #     print(f"{Colors.WARNING}.{Colors.ENDC}", end="", flush=True)
-    #     #     response_content += chunk.content
-        
-    #     print("\n") # Salto de línea después de los puntos de "Pensando..."
-    #     self._parse_and_display(full_response)
-    #     # Llamamos a nuestro método de presentación
-    #     # self._parse_and_display(response_content)
     
     def generate(self, animal_description: str) -> list[dict]:
         """
@@ -395,9 +155,31 @@ class PetNameGenerator:
         # 1. Definir el LLM para el agente (podemos usar una temperatura diferente)
         llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=temperature)
 
+        # --- CONSTRUCCIÓN MANUAL DE HERRAMIENTAS (LA MEJOR PRÁCTICA) ---
+        # 1. Herramienta de Wikipedia
+        # Se necesita un "wrapper" de la API y luego se pasa a la herramienta.
+        api_wrapper = WikipediaAPIWrapper(top_k_results=1, doc_content_chars_max=2000)
+        wikipedia_tool = WikipediaQueryRun(
+            name="wikipedia",
+            description="Una herramienta para buscar información en Wikipedia sobre personas, lugares, eventos, etc.",
+            api_wrapper=api_wrapper
+        )
+        
+        # 2. Herramienta de Matemáticas
+        # Se crea la cadena de matemáticas y se envuelve en un "Tool".
+        math_chain = LLMMathChain.from_llm(llm)
+        math_tool = Tool(
+            name="Calculator",
+            description="Una calculadora útil para problemas matemáticos y de aritmética.",
+            func=math_chain.run
+        )
+
+        # 3. Lista de herramientas
+        tools = [wikipedia_tool, math_tool]
+        
         # 2. Cargar las herramientas. Esto sigue siendo igual.
         # Wikipedia para buscar información y llm-math para cálculos.
-        tools = load_tools(["wikipedia", "llm-math"], llm=llm)
+        # tools = load_tools(["wikipedia", "llm-math"], llm=llm)
 
         # 3. Obtener el prompt del Hub de LangChain.
         # Este prompt está específicamente diseñado para enseñar a los modelos a usar la lógica ReAct.
@@ -448,34 +230,116 @@ Pensamiento:{agent_scratchpad}
         return agent_executor
 
 
-# obsoloto
-# def langchain_agent():
-#     try:
-#         llm = ChatGoogleGenerativeAI(
-#             model="gemini-1.5-flash",
-#             temperature=0.5,
-#             top_p=0.5,
-#             top_k=50
-#         )
+# --- NUEVA CLASE PARA ASISTENTE DE DOCUMENTOS (RAG) ---
+class DocumentAssistant:
+    def __init__(self):
+        """
+        Inicializa el asistente con el modelo de embeddings de Google.
+        """
+        self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3)
         
-#         tools = load_tools(["wikipedia", "llm-math"], llm=llm)
+    # --- NUEVA FUNCIÓN DE AYUDA DENTRO DE LA CLASE ---
+    def _get_video_id_from_url(self, url: str) -> str | None:
+        """Extrae el ID del video de una URL de YouTube."""
+        # Patrón para URLs de youtube.com/watch?v=...
+        match = re.search(r"v=([a-zA-Z0-9_-]{11})", url)
+        if match:
+            return match.group(1)
+        # Patrón para URLs cortas de youtu.be/...
+        match = re.search(r"youtu\.be/([a-zA-Z0-9_-]{11})", url)
+        if match:
+            return match.group(1)
+        return None
+
+    def create_vector_db(self, source, source_type: str):
+        """
+        Crea una base de datos de vectores a partir de una fuente (URL de YouTube o archivo PDF).
         
-#         agent = initialize_agent(
-#             tools,
-#             llm,
-#             agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
-#             verbose=True # nos muestra el razonamiento
-#         )
+        Args:
+            source: La URL del video o el objeto de archivo subido desde Streamlit.
+            source_type: 'youtube' o 'pdf'.
         
-#         result = agent.run(
-#             "¿Cuál es la edad promedio de un gato? Multiplica la edad por 3"
-#         )
+        Returns:
+            El objeto de base de datos de vectores FAISS.
+        """
+        docs = [] # Inicializamos una lista vacía para los documentos
+
+        if source_type == 'youtube':
+            video_id = self._get_video_id_from_url(source)
+            if not video_id:
+                raise ValueError("La URL de YouTube no es válida o no tiene el formato esperado.")
+            
+            try:
+                # Usamos la librería directamente, que es más fiable
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['es', 'en'])
+                
+                # Unimos todos los trozos de texto en un solo string
+                transcript_text = " ".join([d['text'] for d in transcript_list])
+                
+                # Creamos un único objeto Document de LangChain con la transcripción
+                docs = [Document(page_content=transcript_text, metadata={"source": video_id})]
+
+            except Exception as e:
+                # Si falla (ej. no hay transcripción), lanzamos un error claro
+                raise Exception(f"No se pudo obtener la transcripción del video. Causa: {e}")
+
+        elif source_type == 'pdf':
+            # El código para PDF no cambia
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+                tmp_file.write(source.getvalue())
+                tmp_file_path = tmp_file.name
+            
+            loader = PyPDFLoader(tmp_file_path)
+            docs = loader.load_and_split()
+            os.remove(tmp_file_path)
         
-#         print(result)
+        else:
+            raise ValueError("Tipo de fuente no soportado.")
         
-#     except Exception as e:
-#         print(f"{Colors.FAIL}Error crítico al cargar el modelo: {e}{Colors.ENDC}")
-#         sys.exit(1)
+        if not docs:
+            raise ValueError("No se pudo cargar ningún contenido del documento o video.")
+
+        # El resto del proceso (splitter, FAISS) es idéntico y funcionará con la lista 'docs'
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        chunks = text_splitter.split_documents(docs)
+        
+        db = FAISS.from_documents(chunks, self.embeddings)
+        return db
+
+    def create_rag_chain(self, vector_store):
+        """
+        Crea y devuelve una cadena RAG usando LCEL.
+        """
+        # El retriever busca documentos similares en la base de datos de vectores
+        retriever = vector_store.as_retriever()
+
+        # Plantilla del prompt para guiar al LLM
+        template = """
+        Eres un asistente experto en responder preguntas.
+        Utiliza únicamente el siguiente contexto para responder la pregunta del usuario.
+        Si la respuesta no se encuentra en el contexto, di amablemente que no tienes esa información.
+        
+        Contexto:
+        {context}
+        
+        Pregunta:
+        {question}
+        
+        Respuesta:
+        """
+        prompt = ChatPromptTemplate.from_template(template)
+
+        # Construcción de la cadena LCEL
+        rag_chain = (
+            {"context": retriever, "question": RunnablePassthrough()}
+            | prompt
+            | self.llm
+            | StrOutputParser()
+        )
+        
+        return rag_chain
+
 
 
 # --- Punto de Entrada del Script ---
