@@ -193,6 +193,14 @@ from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser # Un parser simple
+# obsolotetos
+# from langchain.agents import load_tools
+# from langchain.agents import initialize_agent
+# from langchain.agents import AgentType
+# --- NUEVOS IMPORTS PARA EL AGENTE ---
+from langchain.agents import load_tools, create_react_agent, AgentExecutor
+# El "Hub" es donde LangChain almacena prompts de agentes probados y optimizados
+from langchain import hub
 
 # --- Clase para los Colores ANSI ---
 # Definir esto en una clase hace que el código sea más legible
@@ -377,6 +385,97 @@ class PetNameGenerator:
         response_content = self._chain.invoke({"animal_description": animal_description})
         # Llama al nuevo método de parseo y devuelve el resultado
         return self._parse_response(response_content)
+    
+    # --- NUEVO MÉTODO PARA EL AGENTE ---
+    def create_agent_executor(self, temperature=0.5):
+        """
+        Crea y devuelve un AgentExecutor listo para ser usado.
+        Esta es la nueva forma de construir agentes en LangChain.
+        """
+        # 1. Definir el LLM para el agente (podemos usar una temperatura diferente)
+        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=temperature)
+
+        # 2. Cargar las herramientas. Esto sigue siendo igual.
+        # Wikipedia para buscar información y llm-math para cálculos.
+        tools = load_tools(["wikipedia", "llm-math"], llm=llm)
+
+        # 3. Obtener el prompt del Hub de LangChain.
+        # Este prompt está específicamente diseñado para enseñar a los modelos a usar la lógica ReAct.
+        # Es el reemplazo moderno de "AgentType.ZERO_SHOT_REACT_DESCRIPTION".
+        # prompt = hub.pull("hwchase17/react")
+        
+        # --- AQUÍ VIENE LA MAGIA: NUESTRO PROMPT EN ESPAÑOL ---
+        # 3.1. Definimos la plantilla del prompt en un string.
+        #    Hemos traducido y adaptado el prompt ReAct original.
+        template_en_espanol = """
+Responde a la siguiente pregunta de la mejor manera posible. Tienes acceso a las siguientes herramientas:
+
+{tools}
+
+Utiliza el siguiente formato:
+
+Pregunta: la pregunta original que debes responder
+Pensamiento: siempre debes pensar qué hacer a continuación
+Acción: la acción a tomar, debe ser una de [{tool_names}]
+Entrada de la Acción: la entrada para la acción
+Observación: el resultado de la acción
+... (este patrón de Pensamiento/Acción/Entrada de la Acción/Observación puede repetirse N veces)
+Pensamiento: Ahora sé la respuesta final.
+Final Answer: la respuesta final y definitiva a la pregunta original en español  <-- ¡SOLUCIÓN!
+
+Comienza el proceso.
+
+Pregunta: {input}
+Pensamiento:{agent_scratchpad}
+"""
+        # 3.2. Creamos el objeto PromptTemplate a partir de nuestro string.
+        prompt = PromptTemplate.from_template(template_en_espanol)
+
+        # 4. Crear el Agente.
+        # Se unen el LLM, las herramientas y el prompt. El agente decide QUÉ hacer.
+        agent = create_react_agent(llm, tools, prompt)
+
+        # 5. Crear el Ejecutor del Agente.
+        # Este es el motor que realmente ejecuta los pasos del agente en un bucle.
+        # handle_parsing_errors=True lo hace más robusto.
+        agent_executor = AgentExecutor(
+            agent=agent, 
+            tools=tools, 
+            verbose=True, 
+            handle_parsing_errors=True
+        )
+        
+        return agent_executor
+
+
+# obsoloto
+# def langchain_agent():
+#     try:
+#         llm = ChatGoogleGenerativeAI(
+#             model="gemini-1.5-flash",
+#             temperature=0.5,
+#             top_p=0.5,
+#             top_k=50
+#         )
+        
+#         tools = load_tools(["wikipedia", "llm-math"], llm=llm)
+        
+#         agent = initialize_agent(
+#             tools,
+#             llm,
+#             agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION,
+#             verbose=True # nos muestra el razonamiento
+#         )
+        
+#         result = agent.run(
+#             "¿Cuál es la edad promedio de un gato? Multiplica la edad por 3"
+#         )
+        
+#         print(result)
+        
+#     except Exception as e:
+#         print(f"{Colors.FAIL}Error crítico al cargar el modelo: {e}{Colors.ENDC}")
+#         sys.exit(1)
 
 
 # --- Punto de Entrada del Script ---
