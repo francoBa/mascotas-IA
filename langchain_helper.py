@@ -21,6 +21,8 @@ from langchain_community.document_loaders import YoutubeLoader, PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_community.tools import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
+# --- NUEVOS IMPORTS PARA RAG AVANZADO ---
+from langchain.retrievers.multi_query import MultiQueryRetriever
 
 # --- Componentes del "Core" de LangChain (Abstracciones Fundamentales) ---
 from langchain_core.output_parsers import StrOutputParser
@@ -237,20 +239,23 @@ class DocumentAssistant:
         Inicializa el asistente con el modelo de embeddings de Google.
         """
         self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.3)
+        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.1) # mejoramos la temperatura para respuestas reales
         
     # --- NUEVA FUNCIÓN DE AYUDA DENTRO DE LA CLASE ---
     def _get_video_id_from_url(self, url: str) -> str | None:
         """Extrae el ID del video de una URL de YouTube."""
-        # Patrón para URLs de youtube.com/watch?v=...
-        match = re.search(r"v=([a-zA-Z0-9_-]{11})", url)
-        if match:
-            return match.group(1)
-        # Patrón para URLs cortas de youtu.be/...
-        match = re.search(r"youtu\.be/([a-zA-Z0-9_-]{11})", url)
-        if match:
-            return match.group(1)
-        return None
+        # Patrones para buscar el ID del video de 11 caracteres
+        patterns = [
+            r"watch\?v=([a-zA-Z0-9_-]{11})",  # Formato estándar: /watch?v=...
+            r"live/([a-zA-Z0-9_-]{11})",      # Formato de Live grabado: /live/...
+            r"youtu\.be/([a-zA-Z0-9_-]{11})", # Formato corto: youtu.be/...
+            r"embed/([a-zA-Z0-9_-]{11})"      # Formato de embed: /embed/...
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                # Devuelve el primer grupo de captura, que es el ID
+                return match.group(1)
 
     def create_vector_db(self, source, source_type: str):
         """
@@ -301,7 +306,7 @@ class DocumentAssistant:
             raise ValueError("No se pudo cargar ningún contenido del documento o video.")
 
         # El resto del proceso (splitter, FAISS) es idéntico y funcionará con la lista 'docs'
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=100)
+        text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         chunks = text_splitter.split_documents(docs)
         
         db = FAISS.from_documents(chunks, self.embeddings)
@@ -339,6 +344,59 @@ class DocumentAssistant:
         )
         
         return rag_chain
+    
+    # --- ¡NUEVO MÉTODO RAG AVANZADO! ---
+    def create_advanced_rag_chain(self, vector_store):
+        """
+        Crea una cadena RAG avanzada usando un MultiQueryRetriever.
+        """
+        # 1. Creamos un retriever simple como base
+        base_retriever = vector_store.as_retriever(search_kwargs={"k": 7}) # Recupera más chunks (ej. 7)
+
+        # 2. Definimos un prompt para que el LLM genere las preguntas alternativas
+        #    Lo hacemos en español para que funcione mejor.
+        from langchain.prompts import PromptTemplate
+        QUERY_PROMPT_TEMPLATE = """
+        Eres un asistente de IA experto en investigación. Tu objetivo es generar 3 versiones
+        diferentes de la pregunta de un usuario para recuperar los documentos más relevantes
+        de una base de datos de vectores. Al generar múltiples perspectivas de la pregunta del
+        usuario, ayudas al usuario a superar algunas de las limitaciones de la búsqueda
+        basada en distancia. Proporciona estas preguntas alternativas separadas por saltos de línea.
+        Pregunta Original: {question}
+        """
+        query_prompt = PromptTemplate.from_template(QUERY_PROMPT_TEMPLATE)
+
+        # 3. Creamos el MultiQueryRetriever
+        # Este es el componente "mágico". Usará el LLM y el prompt anterior.
+        multi_query_retriever = MultiQueryRetriever.from_llm(
+            retriever=base_retriever,
+            llm=self.llm,
+            prompt=query_prompt
+        )
+
+        # 4. Construimos la cadena LCEL final, igual que antes, pero usando el nuevo retriever
+        template = """
+        Utiliza el siguiente contexto para responder la pregunta de forma concisa y precisa.
+        Si la información no está en el contexto, indica que no puedes responder con la información proporcionada.
+        
+        Contexto:
+        {context}
+        
+        Pregunta:
+        {question}
+        
+        Respuesta Detallada:
+        """
+        prompt = ChatPromptTemplate.from_template(template)
+
+        advanced_rag_chain = (
+            {"context": multi_query_retriever, "question": RunnablePassthrough()}
+            | prompt
+            | self.llm
+            | StrOutputParser()
+        )
+        
+        return advanced_rag_chain
 
 
 
