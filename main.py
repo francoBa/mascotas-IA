@@ -1,13 +1,35 @@
 import langchain_helper as lch
 import streamlit as st
+import pytz
+from datetime import datetime
+import asyncio
 
-# --- Configuración de la página (sin cambios) ---
-st.set_page_config(
-    page_title="Asistente de IA Multifunción",
-    page_icon="🤖",
-    layout="centered"
-)
+# --- PARCHE PARA EL EVENT LOOP EN STREAMLIT ---
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
+st.set_page_config(page_title="Asistente de IA Multifunción", page_icon="🤖", layout="centered")
 st.title("🤖 Asistente de IA Multifunción")
+
+# --- Inicialización de Clases en Session State (Más eficiente) ---
+@st.cache_resource
+def get_pet_name_generator():
+    return lch.PetNameGenerator()
+
+@st.cache_resource
+def get_agent_executor():
+    # Creamos una instancia temporal solo para llamar al método.
+    return lch.PetNameGenerator().create_agent_executor()
+
+@st.cache_resource
+def get_doc_assistant():
+    return lch.DocumentAssistant()
+
+st.session_state.pet_name_generator = get_pet_name_generator()
+st.session_state.agent_executor = get_agent_executor()
+st.session_state.doc_assistant = get_doc_assistant()
 
 # --- Usamos pestañas para separar la funcionalidad ---
 tab1, tab2, tab3 = st.tabs(["Generador de Nombres", "Agente de Investigación", "Asistente de Documentos (RAG)"])
@@ -64,17 +86,27 @@ with tab2:
     st.header("Agente de Investigación (con Wikipedia y Calculadora)")
     st.markdown("Haz una pregunta que requiera buscar información o hacer cálculos.")
     
-    # Usamos st.session_state para recordar el agente y no recrearlo
-    if 'agent_executor' not in st.session_state:
-        # Creamos una instancia de nuestra clase helper
-        helper = lch.PetNameGenerator()
-        st.session_state.agent_executor = helper.create_agent_executor()
+        # --- SELECCIÓN DE ZONA HORARIA MANUAL (LA SOLUCIÓN ROBUSTA) ---
+    # Intentamos poner la zona horaria de Argentina por defecto, con un fallback a UTC.
+    try:
+        default_tz_index = pytz.all_timezones.index("America/Argentina/Buenos_Aires")
+    except ValueError:
+        default_tz_index = pytz.all_timezones.index("UTC")
+
+    selected_timezone = st.selectbox(
+        "Elige tu zona horaria para preguntas sobre fechas:",
+        options=pytz.all_timezones,
+        index=default_tz_index,
+        help="La fecha y hora de esta zona horaria se pasará al agente para cálculos precisos."
+    )
+    
+    st.session_state.user_timezone = selected_timezone
 
     # Formulario para la pregunta del agente
     with st.form("agent_form"):
         pregunta_agente = st.text_area(
             "Tu pregunta:", 
-            placeholder="Ej: ¿Quién fue el primer emperador de Roma? ¿En qué año comenzó su mandato?",
+            placeholder="Ej: ¿Cuántos años han pasado desde la invención del teléfono?",
             height=100, # <-- Le damos un poco más de altura
             max_chars=300 # <-- Límite de seguridad
         )
@@ -82,10 +114,26 @@ with tab2:
 
     if submitted_agent and pregunta_agente:
         with st.spinner("El agente está pensando y usando sus herramientas... 🔎"):
+            # --- CÁLCULO DE LA HORA LOCAL DEL USUARIO ---
+            utc_now = datetime.now(pytz.utc)
+            try:
+                # Usamos la zona horaria que obtuvimos del navegador
+                user_tz = pytz.timezone(st.session_state.user_timezone)
+                user_now = utc_now.astimezone(user_tz)
+                current_time_str = user_now.strftime('%Y-%m-%d %H:%M:%S %Z')
+            except pytz.UnknownTimeZoneError:
+                # Fallback por si la zona horaria devuelta no es válida
+                current_time_str = utc_now.strftime('%Y-%m-%d %H:%M:%S UTC')
+                st.warning(f"No se pudo determinar tu zona horaria. Usando UTC como referencia.")
+            
+            # Mostramos la hora que usará el agente para que el usuario sea consciente
+            st.info(f"ℹ️ Usando como fecha y hora actual: **{current_time_str}**")
+            
             # .invoke() es la nueva forma de ejecutar el agente.
             # Pasamos la pregunta en un diccionario con la clave 'input'.
             response = st.session_state.agent_executor.invoke({
-                "input": pregunta_agente
+                "input": pregunta_agente,
+                "current_time": current_time_str # <-- Pasamos la fecha al prompt
             })
             
             st.subheader("Respuesta del Agente:")
@@ -103,79 +151,88 @@ with tab3:
     st.markdown("Sube un PDF o proporciona una URL de YouTube para hacerle preguntas sobre su contenido.")
 
     PDF_MAX_SIZE_MB = 50 # Pongamos un límite más razonable para empezar
-
-    # Inicializamos el asistente en el session_state
-    if 'doc_assistant' not in st.session_state:
-        st.session_state.doc_assistant = lch.DocumentAssistant()
-
-    # Selección del tipo de fuente
-    source_type = st.radio("Elige el tipo de fuente:", ("PDF", "YouTube"), horizontal=True)
-
-    # Widgets de entrada para la fuente
+    source_type = st.radio("Elige el tipo de fuente:", ("PDF", "YouTube"), horizontal=True, key="source_type_selector")
+    
+    source = None
     if source_type == "PDF":
-        uploaded_file = st.file_uploader(
-            label=f"**1. Sube tu archivo PDF (Límite: {PDF_MAX_SIZE_MB} MB)**",
-            help=f"Arrastra un archivo o haz clic para buscarlo. El tamaño máximo permitido es de {PDF_MAX_SIZE_MB} MB.",
-            type="pdf"
+        source = st.file_uploader(
+            label=f"**Sube tu archivo PDF (Límite: {PDF_MAX_SIZE_MB} MB)**",
+            help=f"El tamaño máximo permitido es de {PDF_MAX_SIZE_MB} MB.",
+            type="pdf",
+            key="pdf_uploader"
         )
-        source = uploaded_file
     else:
-        youtube_url = st.text_input("Ingresa la URL de YouTube", max_chars=80)
-        source = youtube_url
+        source = st.text_input("Ingresa la URL de YouTube", max_chars=80, key="youtube_url_input")
 
-    if st.button("Procesar Documento"):
+    if st.button("Procesar Documento", key="process_button"):
         if source:
-            # --- NUEVO BLOQUE DE VALIDACIÓN ---
-            is_valid = True # Empezamos asumiendo que es válido
-            if source_type == 'PDF':
-                file_size_mb = source.size / (1024 * 1024) # Convertimos bytes a MB
-                if file_size_mb > PDF_MAX_SIZE_MB:
-                    st.error(f"Error: El archivo es demasiado grande ({file_size_mb:.2f} MB). El límite es de {PDF_MAX_SIZE_MB} MB.")
-                    is_valid = False # Marcamos como no válido
-            # Solo continuamos si la validación pasó
+            is_valid = True
+            if source_type == 'PDF' and source.size / (1024 * 1024) > PDF_MAX_SIZE_MB:
+                st.error(f"Error: El archivo es demasiado grande. El límite es de {PDF_MAX_SIZE_MB} MB.")
+                is_valid = False
+            
             if is_valid:
                 with st.spinner(f"Procesando {source_type}... Para archivos grandes, esto puede tardar varios minutos."):
                     try:
-                        # Creamos la base de datos de vectores y la guardamos en el estado de la sesión
-                        vector_db = st.session_state.doc_assistant.create_vector_db(source, source_type.lower())
-                        st.session_state.vector_store = vector_db
-                        st.success(f"¡{source_type} procesado y listo para tus preguntas!")
+                        st.session_state.vector_store = st.session_state.doc_assistant.create_vector_db(source, source_type.lower())
+                        st.success(f"¡{source_type} procesado! Listo para tus preguntas.")
+                        # Limpiamos el campo de pregunta anterior para forzar una nueva consulta.
+                        if 'query_input' in st.session_state:
+                            st.session_state.query_input = ""
                     except Exception as e:
                         st.error(f"Error al procesar: {e}")
-                        st.warning("Esto puede ocurrir con PDFs muy grandes debido a los límites de la API o con videos sin transcripción. Intenta con un documento más pequeño o un video diferente.")
         else:
             st.warning("Por favor, sube un archivo o ingresa una URL.")
 
-    # Sección de preguntas, solo aparece si el documento ha sido procesado
     if 'vector_store' in st.session_state:
         st.subheader("Haz tu pregunta sobre el documento:", divider="rainbow")
         
-        # ¡NUEVA OPCIÓN PARA EL USUARIO!
-        use_advanced_retriever = st.toggle(
-            "Activar búsqueda avanzada (Multi-Query)", 
-            value=True, # Activado por defecto
-            help="Usa un LLM para generar múltiples preguntas y mejorar la calidad de la búsqueda. Puede ser un poco más lento."
+        # --- NUEVO SELECTOR DE ESTRATEGIA ---
+        strategy = st.selectbox(
+            "Elige una estrategia de consulta:",
+            options=["Simple (Rápida)", "Map-Reduce (Para documentos grandes)", "Refine (La más robusta)"],
+            index=0,
+            help="**Simple:** Rápida, ideal para la mayoría de los casos. **Map-Reduce:** Buena para PDFs grandes, procesa en paralelo. **Refine:** La más lenta pero la que mejor maneja documentos muy densos y evita errores de límite."
         )
         
-        query = st.text_area("Pregunta:", height=100, max_chars=150)
+        use_advanced_retriever = st.toggle(
+            "Activar búsqueda avanzada (Multi-Query)", value=False,
+            help="Usa IA para generar múltiples preguntas y mejorar la calidad de la búsqueda. Un poco más lento."
+        )
+            
+        chain_type = {"Simple (Rápida)": "stuff", "Map-Reduce (Para documentos grandes)": "map_reduce", "Refine (La más robusta)": "refine"}[strategy]
         
-        if st.button("Obtener Respuesta"):
+        query = st.text_area("Pregunta:", height=100, max_chars=150, key="query_input")
+        
+        if st.button("Obtener Respuesta", key="get_answer_button"):
             if query:
-                with st.spinner("Buscando la respuesta..."):
-                    # Obtenemos la base de datos de vectores del estado de la sesión
-                    vector_store = st.session_state.vector_store
-                    
-                    if use_advanced_retriever:
-                        # Usamos la nueva cadena avanzada
-                        rag_chain = st.session_state.doc_assistant.create_advanced_rag_chain(vector_store)
-                    else:
-                        # Usamos la cadena simple original
-                        rag_chain = st.session_state.doc_assistant.create_rag_chain(vector_store)
-                    
-                    # Invocamos la cadena para obtener la respuesta
-                    response = rag_chain.invoke(query)
-                    
-                    st.success("Respuesta:")
-                    st.write(response)
+                spinner_message = f"Procesando en modo '{strategy}'..." if chain_type != "stuff" else "Buscando la respuesta..."
+                
+                with st.spinner(spinner_message):
+                    try:
+                        # --- CÓDIGO DE LLAMADA SIMPLIFICADO ---
+                        rag_chain = st.session_state.doc_assistant.create_rag_chain(
+                            st.session_state.vector_store, use_advanced_retriever, chain_type
+                        )
+                        response = rag_chain.invoke({"input": query})
+                        st.success("Respuesta:")
+                        st.write(response['answer'])
+
+                    except Exception as e:
+                        st.error("Ocurrió un error al generar la respuesta.")
+                        
+                        # --- LÓGICA DE MENSAJE INTELIGENTE ---
+                        error_message = str(e)
+                        if "ResourceExhausted" in error_message or "limit" in error_message.lower():
+                            # El error es de límite de API
+                            if chain_type == "stuff":
+                                st.warning("El documento parece ser muy grande para el modo simple. Prueba seleccionando la estrategia 'Map-Reduce' o 'Refine'.")
+                            elif chain_type == "map_reduce":
+                                st.warning("Incluso con el modo Map-Reduce, se alcanzó un límite. El documento puede ser extremadamente denso. Prueba la estrategia 'Refine', que es más lenta pero más segura.")
+                            else: # Refine
+                                st.warning("Se alcanzó un límite incluso con la estrategia más robusta. El documento es excepcionalmente grande o complejo. Intenta con una pregunta más específica o un documento más pequeño.")
+                        else:
+                            # Otros errores
+                            st.info(f"Detalle técnico: {error_message}")
             else:
                 st.warning("Por favor, escribe una pregunta.")

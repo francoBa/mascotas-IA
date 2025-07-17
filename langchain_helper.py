@@ -1,36 +1,32 @@
-# --- Módulos estándar de Python ---
 import os
 import sys
 import re
+import random
+from datetime import datetime
 import tempfile
 from dotenv import load_dotenv
-
-# --- Librerías de Terceros (opcional, podrías tenerlas en la UI) ---
 from youtube_transcript_api import YouTubeTranscriptApi
-
-# --- Componentes Principales de LangChain ---
+# Prompts y Documentos
 from langchain.prompts import PromptTemplate, ChatPromptTemplate
-from langchain.agents import create_react_agent, AgentExecutor, Tool
+from langchain_core.documents import Document
+# Componentes de Cadenas y Agentes
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain.chains import LLMMathChain
-from langchain import hub
-
-# --- Componentes del Ecosistema de LangChain (Integraciones) ---
+from langchain.chains import create_retrieval_chain, LLMMathChain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain.agents import create_react_agent, AgentExecutor, Tool
+from langchain.retrievers.multi_query import MultiQueryRetriever
+# Integraciones (Google, Community)
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
-from langchain_community.document_loaders import YoutubeLoader, PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_community.tools import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
-# --- NUEVOS IMPORTS PARA RAG AVANZADO ---
-from langchain.retrievers.multi_query import MultiQueryRetriever
-
-# --- Componentes del "Core" de LangChain (Abstracciones Fundamentales) ---
+# Componentes de LCEL Core
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough
-from langchain_core.documents import Document
+from langchain_core.runnables import RunnablePassthrough, RunnableLambda
+
 
 # --- Clase para los Colores ANSI ---
-# Definir esto en una clase hace que el código sea más legible
 class Colors:
     HEADER = '\033[95m'    # Morado claro
     BLUE = '\033[94m'      # Azul
@@ -42,15 +38,18 @@ class Colors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
+
 # --- Nuestra Clase Principal ---
 class PetNameGenerator:
     def __init__(self, temperature=0.8, top_p=0.9, top_k=40):
         load_dotenv()
+        # Usamos una temperatura aleatoria en un rango creativo
+        random_temperature = random.uniform(0.7, 1.0)
         # algunas variables que sólo las usamos de manera temporal las delcaramos como locales (sin self.)
         try:
             llm = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash",
-                temperature=temperature,
+                model="gemini-2.5-flash",
+                temperature=random_temperature,
                 top_p=top_p,
                 top_k=top_k
             )
@@ -155,7 +154,7 @@ class PetNameGenerator:
         Esta es la nueva forma de construir agentes en LangChain.
         """
         # 1. Definir el LLM para el agente (podemos usar una temperatura diferente)
-        llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=temperature)
+        llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=temperature)
 
         # --- CONSTRUCCIÓN MANUAL DE HERRAMIENTAS (LA MEJOR PRÁCTICA) ---
         # 1. Herramienta de Wikipedia
@@ -176,25 +175,20 @@ class PetNameGenerator:
             func=math_chain.run
         )
 
-        # 3. Lista de herramientas
+        # 4. Lista de herramientas
         tools = [wikipedia_tool, math_tool]
         
-        # 2. Cargar las herramientas. Esto sigue siendo igual.
-        # Wikipedia para buscar información y llm-math para cálculos.
-        # tools = load_tools(["wikipedia", "llm-math"], llm=llm)
-
-        # 3. Obtener el prompt del Hub de LangChain.
-        # Este prompt está específicamente diseñado para enseñar a los modelos a usar la lógica ReAct.
-        # Es el reemplazo moderno de "AgentType.ZERO_SHOT_REACT_DESCRIPTION".
-        # prompt = hub.pull("hwchase17/react")
         
         # --- AQUÍ VIENE LA MAGIA: NUESTRO PROMPT EN ESPAÑOL ---
-        # 3.1. Definimos la plantilla del prompt en un string.
+        # 5. Definimos la plantilla del prompt en un string.
         #    Hemos traducido y adaptado el prompt ReAct original.
         template_en_espanol = """
 Responde a la siguiente pregunta de la mejor manera posible. Tienes acceso a las siguientes herramientas:
 
 {tools}
+
+**Información Adicional Importante:**
+*   **La fecha y hora actual es: {current_time}**
 
 Utiliza el siguiente formato:
 
@@ -212,14 +206,14 @@ Comienza el proceso.
 Pregunta: {input}
 Pensamiento:{agent_scratchpad}
 """
-        # 3.2. Creamos el objeto PromptTemplate a partir de nuestro string.
+        # 5.2. Creamos el objeto PromptTemplate a partir de nuestro string.
         prompt = PromptTemplate.from_template(template_en_espanol)
 
-        # 4. Crear el Agente.
+        # 6. Crear el Agente.
         # Se unen el LLM, las herramientas y el prompt. El agente decide QUÉ hacer.
         agent = create_react_agent(llm, tools, prompt)
 
-        # 5. Crear el Ejecutor del Agente.
+        # 7. Crear el Ejecutor del Agente.
         # Este es el motor que realmente ejecuta los pasos del agente en un bucle.
         # handle_parsing_errors=True lo hace más robusto.
         agent_executor = AgentExecutor(
@@ -235,179 +229,202 @@ Pensamiento:{agent_scratchpad}
 # --- NUEVA CLASE PARA ASISTENTE DE DOCUMENTOS (RAG) ---
 class DocumentAssistant:
     def __init__(self):
-        """
-        Inicializa el asistente con el modelo de embeddings de Google.
-        """
         self.embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-        self.llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.1) # mejoramos la temperatura para respuestas reales
+        self.llm = ChatGoogleGenerativeAI(model="gemini-2.5-flash", temperature=0.1)
         
-    # --- NUEVA FUNCIÓN DE AYUDA DENTRO DE LA CLASE ---
-    def _get_video_id_from_url(self, url: str) -> str | None:
-        """Extrae el ID del video de una URL de YouTube."""
-        # Patrones para buscar el ID del video de 11 caracteres
+    def _get_youtube_id_robust(self, url: str) -> str | None:
         patterns = [
-            r"watch\?v=([a-zA-Z0-9_-]{11})",  # Formato estándar: /watch?v=...
-            r"live/([a-zA-Z0-9_-]{11})",      # Formato de Live grabado: /live/...
-            r"youtu\.be/([a-zA-Z0-9_-]{11})", # Formato corto: youtu.be/...
-            r"embed/([a-zA-Z0-9_-]{11})"      # Formato de embed: /embed/...
+            r"watch\?v=([a-zA-Z0-9_-]{11})",
+            r"live/([a-zA-Z0-9_-]{11})",
+            r"youtu\.be/([a-zA-Z0-9_-]{11})",
+            r"embed/([a-zA-Z0-9_-]{11})"
         ]
         for pattern in patterns:
             match = re.search(pattern, url)
             if match:
-                # Devuelve el primer grupo de captura, que es el ID
                 return match.group(1)
+        return None
 
     def create_vector_db(self, source, source_type: str):
-        """
-        Crea una base de datos de vectores a partir de una fuente (URL de YouTube o archivo PDF).
-        
-        Args:
-            source: La URL del video o el objeto de archivo subido desde Streamlit.
-            source_type: 'youtube' o 'pdf'.
-        
-        Returns:
-            El objeto de base de datos de vectores FAISS.
-        """
-        docs = [] # Inicializamos una lista vacía para los documentos
-
         if source_type == 'youtube':
-            video_id = self._get_video_id_from_url(source)
+            video_id = self._get_youtube_id_robust(source)
             if not video_id:
-                raise ValueError("La URL de YouTube no es válida o no tiene el formato esperado.")
-            
+                raise ValueError("La URL de YouTube no es válida.")
             try:
-                # Usamos la librería directamente, que es más fiable
-                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['es', 'en'])
-                
-                # Unimos todos los trozos de texto en un solo string
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['es', 'en', 'en-US'])
                 transcript_text = " ".join([d['text'] for d in transcript_list])
-                
-                # Creamos un único objeto Document de LangChain con la transcripción
                 docs = [Document(page_content=transcript_text, metadata={"source": video_id})]
-
             except Exception as e:
-                # Si falla (ej. no hay transcripción), lanzamos un error claro
-                raise Exception(f"No se pudo obtener la transcripción del video. Causa: {e}")
-
+                raise ValueError(f"No se pudo obtener la transcripción del video '{video_id}'. Causa: {e}")
         elif source_type == 'pdf':
-            # El código para PDF no cambia
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                 tmp_file.write(source.getvalue())
                 tmp_file_path = tmp_file.name
-            
             loader = PyPDFLoader(tmp_file_path)
             docs = loader.load_and_split()
             os.remove(tmp_file_path)
-        
         else:
             raise ValueError("Tipo de fuente no soportado.")
         
         if not docs:
-            raise ValueError("No se pudo cargar ningún contenido del documento o video.")
+            raise ValueError("No se pudo cargar contenido del documento.")
 
-        # El resto del proceso (splitter, FAISS) es idéntico y funcionará con la lista 'docs'
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         chunks = text_splitter.split_documents(docs)
-        
         db = FAISS.from_documents(chunks, self.embeddings)
         return db
 
-    def create_rag_chain(self, vector_store):
-        """
-        Crea y devuelve una cadena RAG usando LCEL.
-        """
-        # El retriever busca documentos similares en la base de datos de vectores
-        retriever = vector_store.as_retriever()
+    def create_rag_chain(self, vector_store, use_advanced_retriever: bool, chain_type: str):
+        # 1. SELECCIÓN DEL RETRIEVER
+        k_value = 7
+        if chain_type in ['map_reduce', 'refine']:
+            k_value = 4 if use_advanced_retriever else 5
+        
+        base_retriever = vector_store.as_retriever(search_kwargs={"k": k_value})
+        
+        if use_advanced_retriever:
+            query_prompt = PromptTemplate.from_template(
+                "Eres un asistente de IA. Genera 3 versiones diferentes de la pregunta del usuario para recuperar documentos relevantes.\nPregunta Original: {question}"
+            )
+            retriever = MultiQueryRetriever.from_llm(
+                retriever=base_retriever, llm=self.llm, prompt=query_prompt
+            )
+        else:
+            retriever = base_retriever
 
-        # Plantilla del prompt para guiar al LLM
-        template = """
-        Eres un asistente experto en responder preguntas.
-        Utiliza únicamente el siguiente contexto para responder la pregunta del usuario.
-        Si la respuesta no se encuentra en el contexto, di amablemente que no tienes esa información.
+        # 2. SELECCIÓN DE LA ESTRATEGIA DE CADENA
+        if chain_type == 'stuff':
+            # --- ESTRATEGIA "STUFF" (Correcta y sin cambios) ---
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", "Eres un asistente servicial. Responde la pregunta del usuario basándote en el contexto proporcionado. Responde siempre en español."),
+                ("human", "Contexto:\n{context}\n\nPregunta: {input}")
+            ])
+            document_chain = create_stuff_documents_chain(self.llm, prompt)
+            return create_retrieval_chain(retriever, document_chain)
         
-        Contexto:
-        {context}
-        
-        Pregunta:
-        {question}
-        
-        Respuesta:
-        """
-        prompt = ChatPromptTemplate.from_template(template)
-
-        # Construcción de la cadena LCEL
-        rag_chain = (
-            {"context": retriever, "question": RunnablePassthrough()}
-            | prompt
-            | self.llm
-            | StrOutputParser()
+        # 3. --- ESTRATEGIAS AVANZADAS CON LCEL PURO ---
+        # MAP CHAIN: Esta cadena se aplicará a cada documento recuperado.
+        map_prompt = ChatPromptTemplate.from_template(
+            "A continuación se muestra un fragmento de texto. Resume su contenido principal en español en relación a esta pregunta:\n"
+            "Pregunta: {question}\n"
+            "Fragmento: {context}"
         )
-        
-        return rag_chain
-    
-    # --- ¡NUEVO MÉTODO RAG AVANZADO! ---
-    def create_advanced_rag_chain(self, vector_store):
-        """
-        Crea una cadena RAG avanzada usando un MultiQueryRetriever.
-        """
-        # 1. Creamos un retriever simple como base
-        base_retriever = vector_store.as_retriever(search_kwargs={"k": 7}) # Recupera más chunks (ej. 7)
+        map_chain = map_prompt | self.llm | StrOutputParser()
 
-        # 2. Definimos un prompt para que el LLM genere las preguntas alternativas
-        #    Lo hacemos en español para que funcione mejor.
-        from langchain.prompts import PromptTemplate
-        QUERY_PROMPT_TEMPLATE = """
-        Eres un asistente de IA experto en investigación. Tu objetivo es generar 3 versiones
-        diferentes de la pregunta de un usuario para recuperar los documentos más relevantes
-        de una base de datos de vectores. Al generar múltiples perspectivas de la pregunta del
-        usuario, ayudas al usuario a superar algunas de las limitaciones de la búsqueda
-        basada en distancia. Proporciona estas preguntas alternativas separadas por saltos de línea.
-        Pregunta Original: {question}
-        """
-        query_prompt = PromptTemplate.from_template(QUERY_PROMPT_TEMPLATE)
+        # def map_docs(inputs):
+        #     # Esta función prepara los datos para la cadena map
+        #     documents = inputs["docs"]
+        #     question = inputs["question"]
+        #     return [{"context": doc.page_content, "question": question} for doc in documents]
 
-        # 3. Creamos el MultiQueryRetriever
-        # Este es el componente "mágico". Usará el LLM y el prompt anterior.
-        multi_query_retriever = MultiQueryRetriever.from_llm(
-            retriever=base_retriever,
-            llm=self.llm,
-            prompt=query_prompt
-        )
+        if chain_type == 'map_reduce':
+            # REDUCE CHAIN: Toma todos los resúmenes y crea la respuesta final.
+            reduce_prompt = ChatPromptTemplate.from_template(
+                "A continuación se muestran varios resúmenes de un documento. Sintetízalos en una respuesta final y coherente a la pregunta del usuario. Responde siempre en español.\n"
+                "Pregunta Original: {question}\n"
+                "Resúmenes:\n{summaries}\n\nRespuesta final y completa:"
+            )
+            reduce_chain = reduce_prompt | self.llm | StrOutputParser()
+            
+            def combine_summaries(summaries: list) -> str:
+                return "\n\n".join(summary for summary in summaries if summary)
+            
+            # Flujo completo de Map-Reduce
+            # final_chain = (
+            #     {"docs": retriever, "question": RunnablePassthrough()}
+            #     | RunnableLambda(map_docs)
+            #     | map_chain.batch # .batch() ejecuta en paralelo, es eficiente
+            #     | RunnableLambda(lambda summaries: {"summaries": combine_summaries(summaries), "question": lambda x: x["question"]}) # Esto es un truco para pasar la pregunta
+            #     | (lambda x: {"summaries": x["summaries"], "question": x["question"](x)}) # Ejecuta el lambda interno
+            #     | reduce_chain
+            # )
+            
+            # Flujo completo de Map-Reduce
+            def map_reduce_flow(input_dict: dict):
+                query = input_dict["input"]
+                docs = retriever.invoke(query)
+                map_inputs = [{"context": doc.page_content, "question": query} for doc in docs]
+                summaries = map_chain.batch(map_inputs)
+                combined_summaries = combine_summaries(summaries)
+                final_answer = reduce_chain.invoke({"summaries": combined_summaries, "question": query})
+                return {"answer": final_answer}
+            
+            return RunnableLambda(map_reduce_flow)
+        
+        elif chain_type == 'refine':
+            # REFINE CHAIN: Es una cadena secuencial.
+            def refine_flow(input_dict: dict):
+                query = input_dict["input"]
+                docs = retriever.invoke(query)
+                if not docs:
+                    return {"answer": "No se encontró información relevante en el documento para responder a esa pregunta."}
 
-        # 4. Construimos la cadena LCEL final, igual que antes, pero usando el nuevo retriever
-        template = """
-        Utiliza el siguiente contexto para responder la pregunta de forma concisa y precisa.
-        Si la información no está en el contexto, indica que no puedes responder con la información proporcionada.
+                # Primera respuesta con el primer documento
+                initial_response = map_chain.invoke({"context": docs[0].page_content, "question": query})
+                
+                # Itera sobre el resto de los documentos para refinar
+                for doc in docs[1:]:
+                    refine_prompt = ChatPromptTemplate.from_template(
+                        "Eres un asistente de IA. Tienes una respuesta existente y un nuevo contexto. "
+                        "Mejora la respuesta existente con el nuevo contexto. Responde siempre en español.\n"
+                        "Pregunta: {question}\n"
+                        "Respuesta Existente: {existing_answer}\n"
+                        "Nuevo Contexto: {context}\n"
+                        "Respuesta Refinada:"
+                    )
+                    refine_chain = refine_prompt | self.llm | StrOutputParser()
+                    initial_response = refine_chain.invoke({
+                        "question": query,
+                        "existing_answer": initial_response,
+                        "context": doc.page_content
+                    })
+                return {"answer": initial_response}
+            
+            return RunnableLambda(refine_flow)
         
-        Contexto:
-        {context}
-        
-        Pregunta:
-        {question}
-        
-        Respuesta Detallada:
-        """
-        prompt = ChatPromptTemplate.from_template(template)
+            # REFINE CHAIN: Es una cadena secuencial.
+        #     def refine_flow(inputs: dict):
+        #         docs = inputs["docs"]
+        #         question = inputs["question"]
+                
+        #         # Primera respuesta con el primer documento
+        #         initial_response = map_chain.invoke({"context": docs[0].page_content, "question": question})
+                
+        #         # Itera sobre el resto de los documentos para refinar
+        #         for doc in docs[1:]:
+        #             refine_prompt = ChatPromptTemplate.from_template(
+        #                 "Eres un asistente de IA. Tienes una respuesta existente y un nuevo contexto. "
+        #                 "Mejora la respuesta existente con el nuevo contexto. Responde siempre en español.\n"
+        #                 "Pregunta: {question}\n"
+        #                 "Respuesta Existente: {existing_answer}\n"
+        #                 "Nuevo Contexto: {context}\n"
+        #                 "Respuesta Refinada:"
+        #             )
+        #             refine_chain = refine_prompt | self.llm | StrOutputParser()
+        #             initial_response = refine_chain.invoke({
+        #                 "question": question,
+        #                 "existing_answer": initial_response,
+        #                 "context": doc.page_content
+        #             })
+        #         return initial_response
+            
+        #     final_chain = {"docs": retriever, "question": RunnablePassthrough()} | RunnableLambda(refine_flow)
 
-        advanced_rag_chain = (
-            {"context": multi_query_retriever, "question": RunnablePassthrough()}
-            | prompt
-            | self.llm
-            | StrOutputParser()
-        )
-        
-        return advanced_rag_chain
+        # # Wrapper final para unificar la salida
+        # def wrapper(input_dict: dict):
+        #     query = input_dict["input"]
+        #     result = final_chain.invoke(query)
+        #     return {"answer": result}
 
+        # return RunnableLambda(wrapper)
 
 
 # --- Punto de Entrada del Script ---
 # if __name__ == "__main__":
     # Creamos la instancia de nuestra clase
     # name_generator = PetNameGenerator()
-
     # La usamos
     # descripcion_gata = "Gatita hembra, de color blanco y negro, muy juguetona y un poco cariñosa."
     # name_generator.generate_and_show(descripcion_gata)
-
     # descripcion_perro = "Cachorro de Golden Retriever, muy leal y parece que siempre está sonriendo."
     # name_generator.generate_and_show(descripcion_perro)
