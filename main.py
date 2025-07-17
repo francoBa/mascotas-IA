@@ -172,15 +172,39 @@ with tab3:
                 is_valid = False
             
             if is_valid:
-                with st.spinner(f"Procesando {source_type}... Para archivos grandes, esto puede tardar varios minutos."):
-                    try:
-                        st.session_state.vector_store = st.session_state.doc_assistant.create_vector_db(source, source_type.lower())
-                        st.success(f"¡{source_type} procesado! Listo para tus preguntas.")
-                        # Limpiamos el campo de pregunta anterior para forzar una nueva consulta.
-                        if 'query_input' in st.session_state:
-                            st.session_state.query_input = ""
-                    except Exception as e:
-                        st.error(f"Error al procesar: {e}")
+                st.info(f"Procesando {source_type}... Para archivos grandes, esto puede tardar varios minutos. Por favor, espera.")
+                progress_bar = st.progress(0, text="Iniciando procesamiento...")
+                
+                try:
+                    # Pasamos la barra de progreso a nuestro método del helper
+                    vector_db = st.session_state.doc_assistant.create_vector_db(
+                        source, source_type.lower(), streamlit_progress_bar=progress_bar
+                    )
+                    st.session_state.vector_store = vector_db
+                    progress_bar.progress(1.0, text="¡Documento procesado!")
+                    st.success("¡Listo para tus preguntas!")
+                    if 'query_input' in st.session_state:
+                        st.session_state.query_input = ""
+                
+                except Exception as e:
+                    progress_bar.empty() # Ocultamos la barra de progreso si hay un error
+                    # --- LÓGICA DE MENSAJE DE ERROR INTELIGENTE PARA EL USUARIO ---
+                    error_message = str(e)
+                    # Verificamos si es el error específico de límite de cuota
+                    if "Quota exceeded" in error_message or "429" in error_message or "limit" in error_message.lower():
+                        st.error("Se ha alcanzado el límite de uso de la API.")
+                        st.warning(
+                            "Has realizado demasiadas peticiones en un corto período de tiempo. "
+                            "Esto suele ocurrir al procesar documentos muy grandes.\n\n"
+                            "**Por favor, espera unos minutos e inténtalo de nuevo.**"
+                        )
+                    else:
+                        # Para cualquier otro error, mostramos un mensaje más genérico
+                        st.error("Ocurrió un error inesperado al procesar el documento.")
+                        st.info(
+                            "Esto puede deberse a un formato de archivo incorrecto, un video sin transcripción, "
+                            "o un problema temporal de conexión. Por favor, verifica la fuente y vuelve a intentarlo."
+                        )
         else:
             st.warning("Por favor, sube un archivo o ingresa una URL.")
 

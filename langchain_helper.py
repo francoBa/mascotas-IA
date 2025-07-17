@@ -178,7 +178,6 @@ class PetNameGenerator:
         # 4. Lista de herramientas
         tools = [wikipedia_tool, math_tool]
         
-        
         # --- AQUÍ VIENE LA MAGIA: NUESTRO PROMPT EN ESPAÑOL ---
         # 5. Definimos la plantilla del prompt en un string.
         #    Hemos traducido y adaptado el prompt ReAct original.
@@ -245,7 +244,8 @@ class DocumentAssistant:
                 return match.group(1)
         return None
 
-    def create_vector_db(self, source, source_type: str):
+    def create_vector_db(self, source, source_type: str, streamlit_progress_bar=None):
+        # 1. Cargar Documentos
         if source_type == 'youtube':
             video_id = self._get_youtube_id_robust(source)
             if not video_id:
@@ -269,10 +269,46 @@ class DocumentAssistant:
         if not docs:
             raise ValueError("No se pudo cargar contenido del documento.")
 
+        # 2. Dividir en Chunks
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         chunks = text_splitter.split_documents(docs)
-        db = FAISS.from_documents(chunks, self.embeddings)
-        return db
+        
+        if not chunks:
+            raise ValueError("El documento no pudo ser dividido en fragmentos de texto procesables.")
+
+        num_chunks = len(chunks)
+        print(f"Creando embeddings para {num_chunks} chunks...")
+
+        # 3. Crear el índice FAISS de forma incremental y robusta
+        batch_size = 100
+        
+        try:
+            # Creamos el índice con el PRIMER lote de chunks
+            first_batch = chunks[:batch_size]
+            db = FAISS.from_documents(first_batch, self.embeddings)
+            
+            # Actualizamos la UI
+            if streamlit_progress_bar:
+                progress = min(float(len(first_batch) / num_chunks), 1.0)
+                streamlit_progress_bar.progress(progress, text=f"Procesando fragmento {len(first_batch)}/{num_chunks}...")
+
+            # 4. Iteramos sobre los LOTES RESTANTES y los añadimos al índice
+            for i in range(batch_size, num_chunks, batch_size):
+                next_batch = chunks[i:i + batch_size]
+                if next_batch: # Nos aseguramos de que el lote no esté vacío
+                    db.add_documents(next_batch)
+
+                    # Actualizamos la UI
+                    if streamlit_progress_bar:
+                        progress = min(float((i + len(next_batch)) / num_chunks), 1.0)
+                        streamlit_progress_bar.progress(progress, text=f"Procesando fragmento {i + len(next_batch)}/{num_chunks}...")
+            
+            return db
+        
+        except Exception as e:
+            # Capturamos cualquier error durante el embedding y lo reenviamos
+            # Esto permitirá que el manejo de errores de la UI lo muestre correctamente
+            raise Exception(f"Error durante la creación de embeddings: {e}")
 
     def create_rag_chain(self, vector_store, use_advanced_retriever: bool, chain_type: str):
         # 1. SELECCIÓN DEL RETRIEVER
@@ -311,12 +347,6 @@ class DocumentAssistant:
         )
         map_chain = map_prompt | self.llm | StrOutputParser()
 
-        # def map_docs(inputs):
-        #     # Esta función prepara los datos para la cadena map
-        #     documents = inputs["docs"]
-        #     question = inputs["question"]
-        #     return [{"context": doc.page_content, "question": question} for doc in documents]
-
         if chain_type == 'map_reduce':
             # REDUCE CHAIN: Toma todos los resúmenes y crea la respuesta final.
             reduce_prompt = ChatPromptTemplate.from_template(
@@ -328,16 +358,6 @@ class DocumentAssistant:
             
             def combine_summaries(summaries: list) -> str:
                 return "\n\n".join(summary for summary in summaries if summary)
-            
-            # Flujo completo de Map-Reduce
-            # final_chain = (
-            #     {"docs": retriever, "question": RunnablePassthrough()}
-            #     | RunnableLambda(map_docs)
-            #     | map_chain.batch # .batch() ejecuta en paralelo, es eficiente
-            #     | RunnableLambda(lambda summaries: {"summaries": combine_summaries(summaries), "question": lambda x: x["question"]}) # Esto es un truco para pasar la pregunta
-            #     | (lambda x: {"summaries": x["summaries"], "question": x["question"](x)}) # Ejecuta el lambda interno
-            #     | reduce_chain
-            # )
             
             # Flujo completo de Map-Reduce
             def map_reduce_flow(input_dict: dict):
@@ -381,42 +401,6 @@ class DocumentAssistant:
                 return {"answer": initial_response}
             
             return RunnableLambda(refine_flow)
-        
-            # REFINE CHAIN: Es una cadena secuencial.
-        #     def refine_flow(inputs: dict):
-        #         docs = inputs["docs"]
-        #         question = inputs["question"]
-                
-        #         # Primera respuesta con el primer documento
-        #         initial_response = map_chain.invoke({"context": docs[0].page_content, "question": question})
-                
-        #         # Itera sobre el resto de los documentos para refinar
-        #         for doc in docs[1:]:
-        #             refine_prompt = ChatPromptTemplate.from_template(
-        #                 "Eres un asistente de IA. Tienes una respuesta existente y un nuevo contexto. "
-        #                 "Mejora la respuesta existente con el nuevo contexto. Responde siempre en español.\n"
-        #                 "Pregunta: {question}\n"
-        #                 "Respuesta Existente: {existing_answer}\n"
-        #                 "Nuevo Contexto: {context}\n"
-        #                 "Respuesta Refinada:"
-        #             )
-        #             refine_chain = refine_prompt | self.llm | StrOutputParser()
-        #             initial_response = refine_chain.invoke({
-        #                 "question": question,
-        #                 "existing_answer": initial_response,
-        #                 "context": doc.page_content
-        #             })
-        #         return initial_response
-            
-        #     final_chain = {"docs": retriever, "question": RunnablePassthrough()} | RunnableLambda(refine_flow)
-
-        # # Wrapper final para unificar la salida
-        # def wrapper(input_dict: dict):
-        #     query = input_dict["input"]
-        #     result = final_chain.invoke(query)
-        #     return {"answer": result}
-
-        # return RunnableLambda(wrapper)
 
 
 # --- Punto de Entrada del Script ---
