@@ -2,7 +2,6 @@ import os
 import sys
 import re
 import random
-<<<<<<< HEAD
 from datetime import datetime
 import tempfile
 from dotenv import load_dotenv
@@ -10,42 +9,22 @@ from youtube_transcript_api import YouTubeTranscriptApi
 # Prompts y Documentos
 from langchain.prompts import PromptTemplate, ChatPromptTemplate
 from langchain_core.documents import Document
-=======
-import tempfile
-from dotenv import load_dotenv
-from youtube_transcript_api import YouTubeTranscriptApi, NoTranscriptFound
-
-# Prompts y Documentos
-from langchain.prompts import PromptTemplate, ChatPromptTemplate
-from langchain_core.documents import Document
-
->>>>>>> fix-youtube-processing
 # Componentes de Cadenas y Agentes
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.chains import create_retrieval_chain, LLMMathChain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain.agents import create_react_agent, AgentExecutor, Tool
 from langchain.retrievers.multi_query import MultiQueryRetriever
-<<<<<<< HEAD
-=======
-
->>>>>>> fix-youtube-processing
 # Integraciones (Google, Community)
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.vectorstores import FAISS
 from langchain_community.tools import WikipediaQueryRun
 from langchain_community.utilities import WikipediaAPIWrapper
-<<<<<<< HEAD
-# Componentes de LCEL Core
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.runnables import RunnablePassthrough, RunnableLambda
-=======
 
 # Componentes de LCEL Core
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.runnables import RunnableLambda
->>>>>>> fix-youtube-processing
 
 
 # --- Clase para los Colores ANSI ---
@@ -61,7 +40,6 @@ class Colors:
     UNDERLINE = '\033[4m'
 
 
-<<<<<<< HEAD
 # --- Nuestra Clase Principal ---
 class PetNameGenerator:
     def __init__(self, temperature=0.8, top_p=0.9, top_k=40):
@@ -72,16 +50,6 @@ class PetNameGenerator:
         try:
             llm = ChatGoogleGenerativeAI(
                 model="gemini-2.5-flash",
-=======
-# --- Clase para el Generador de Nombres y Agente ---
-class PetNameGenerator:
-    def __init__(self, temperature=0.8, top_p=0.9, top_k=40):
-        load_dotenv()
-        random_temperature = random.uniform(0.7, 1.0)
-        try:
-            llm = ChatGoogleGenerativeAI(
-                model="gemini-1.5-flash",
->>>>>>> fix-youtube-processing
                 temperature=random_temperature,
                 top_p=top_p,
                 top_k=top_k
