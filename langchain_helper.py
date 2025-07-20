@@ -245,31 +245,32 @@ class DocumentAssistant:
         return None
 
     def create_vector_db(self, source, source_type: str, streamlit_progress_bar=None):
-        # 1. Cargar Documentos
+        # --- PASO 1: Cargar los documentos en una lista 'docs' ---
+        docs = []
         if source_type == 'youtube':
             video_id = self._get_youtube_id_robust(source)
             if not video_id:
-                raise ValueError("La URL de YouTube no es válida.")
+                raise ValueError("La URL de YouTube no es válida o no tiene el formato esperado.")
             try:
                 transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['es', 'en', 'en-US'])
                 transcript_text = " ".join([d['text'] for d in transcript_list])
                 docs = [Document(page_content=transcript_text, metadata={"source": video_id})]
             except Exception as e:
                 raise ValueError(f"No se pudo obtener la transcripción del video '{video_id}'. Causa: {e}")
+
         elif source_type == 'pdf':
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                 tmp_file.write(source.getvalue())
                 tmp_file_path = tmp_file.name
+            
             loader = PyPDFLoader(tmp_file_path)
             docs = loader.load_and_split()
             os.remove(tmp_file_path)
-        else:
-            raise ValueError("Tipo de fuente no soportado.")
         
         if not docs:
-            raise ValueError("No se pudo cargar contenido del documento.")
+            raise ValueError("No se pudo cargar ningún contenido del documento o video.")
 
-        # 2. Dividir en Chunks
+        # --- PASO 2: Dividir los documentos en chunks ---
         text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         chunks = text_splitter.split_documents(docs)
         
@@ -279,36 +280,101 @@ class DocumentAssistant:
         num_chunks = len(chunks)
         print(f"Creando embeddings para {num_chunks} chunks...")
 
-        # 3. Crear el índice FAISS de forma incremental y robusta
+        # --- PASO 3: Crear el índice FAISS de forma incremental (funciona para ambos) ---
         batch_size = 100
+        db = None
         
         try:
-            # Creamos el índice con el PRIMER lote de chunks
-            first_batch = chunks[:batch_size]
-            db = FAISS.from_documents(first_batch, self.embeddings)
-            
-            # Actualizamos la UI
-            if streamlit_progress_bar:
-                progress = min(float(len(first_batch) / num_chunks), 1.0)
-                streamlit_progress_bar.progress(progress, text=f"Procesando fragmento {len(first_batch)}/{num_chunks}...")
+            for i in range(0, num_chunks, batch_size):
+                batch = chunks[i:i + batch_size]
+                
+                if not batch:
+                    continue
 
-            # 4. Iteramos sobre los LOTES RESTANTES y los añadimos al índice
-            for i in range(batch_size, num_chunks, batch_size):
-                next_batch = chunks[i:i + batch_size]
-                if next_batch: # Nos aseguramos de que el lote no esté vacío
-                    db.add_documents(next_batch)
+                if db is None:
+                    # Si es el primer lote, creamos la base de datos
+                    db = FAISS.from_documents(batch, self.embeddings)
+                else:
+                    # Para los lotes siguientes, los añadimos al índice existente
+                    db.add_documents(batch)
 
-                    # Actualizamos la UI
-                    if streamlit_progress_bar:
-                        progress = min(float((i + len(next_batch)) / num_chunks), 1.0)
-                        streamlit_progress_bar.progress(progress, text=f"Procesando fragmento {i + len(next_batch)}/{num_chunks}...")
-            
+                # Actualizamos la barra de progreso de Streamlit
+                if streamlit_progress_bar:
+                    progress = min(float((i + len(batch)) / num_chunks), 1.0)
+                    streamlit_progress_bar.progress(progress, text=f"Procesando fragmento {i + len(batch)}/{num_chunks}...")
+
+            if db is None:
+                 raise ValueError("No se pudieron crear los embeddings para ningún fragmento.")
+
             return db
         
         except Exception as e:
             # Capturamos cualquier error durante el embedding y lo reenviamos
-            # Esto permitirá que el manejo de errores de la UI lo muestre correctamente
             raise Exception(f"Error durante la creación de embeddings: {e}")
+        # 1. Cargar Documentos
+        # if source_type == 'youtube':
+        #     video_id = self._get_youtube_id_robust(source)
+        #     if not video_id:
+        #         raise ValueError("La URL de YouTube no es válida.")
+        #     try:
+        #         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['es', 'en', 'en-US'])
+        #         transcript_text = " ".join([d['text'] for d in transcript_list])
+        #         docs = [Document(page_content=transcript_text, metadata={"source": video_id})]
+        #     except Exception as e:
+        #         raise ValueError(f"No se pudo obtener la transcripción del video '{video_id}'. Causa: {e}")
+        # elif source_type == 'pdf':
+        #     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
+        #         tmp_file.write(source.getvalue())
+        #         tmp_file_path = tmp_file.name
+        #     loader = PyPDFLoader(tmp_file_path)
+        #     docs = loader.load_and_split()
+        #     os.remove(tmp_file_path)
+        # else:
+        #     raise ValueError("Tipo de fuente no soportado.")
+        
+        # if not docs:
+        #     raise ValueError("No se pudo cargar contenido del documento.")
+
+        # # 2. Dividir en Chunks
+        # text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
+        # chunks = text_splitter.split_documents(docs)
+        
+        # if not chunks:
+        #     raise ValueError("El documento no pudo ser dividido en fragmentos de texto procesables.")
+
+        # num_chunks = len(chunks)
+        # print(f"Creando embeddings para {num_chunks} chunks...")
+
+        # # 3. Crear el índice FAISS de forma incremental y robusta
+        # batch_size = 100
+        
+        # try:
+        #     # Creamos el índice con el PRIMER lote de chunks
+        #     first_batch = chunks[:batch_size]
+        #     db = FAISS.from_documents(first_batch, self.embeddings)
+            
+        #     # Actualizamos la UI
+        #     if streamlit_progress_bar:
+        #         progress = min(float(len(first_batch) / num_chunks), 1.0)
+        #         streamlit_progress_bar.progress(progress, text=f"Procesando fragmento {len(first_batch)}/{num_chunks}...")
+
+        #     # 4. Iteramos sobre los LOTES RESTANTES y los añadimos al índice
+        #     for i in range(batch_size, num_chunks, batch_size):
+        #         next_batch = chunks[i:i + batch_size]
+        #         if next_batch: # Nos aseguramos de que el lote no esté vacío
+        #             db.add_documents(next_batch)
+
+        #             # Actualizamos la UI
+        #             if streamlit_progress_bar:
+        #                 progress = min(float((i + len(next_batch)) / num_chunks), 1.0)
+        #                 streamlit_progress_bar.progress(progress, text=f"Procesando fragmento {i + len(next_batch)}/{num_chunks}...")
+            
+        #     return db
+        
+        # except Exception as e:
+        #     # Capturamos cualquier error durante el embedding y lo reenviamos
+        #     # Esto permitirá que el manejo de errores de la UI lo muestre correctamente
+        #     raise Exception(f"Error durante la creación de embeddings: {e}")
 
     def create_rag_chain(self, vector_store, use_advanced_retriever: bool, chain_type: str):
         # 1. SELECCIÓN DEL RETRIEVER
